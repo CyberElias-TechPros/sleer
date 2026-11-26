@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './auth/client';
 import { Video } from './feed';
+import { isWriteLimitError } from './errors';
 
 type Comment = { id: string; user_id: string; body: string; profiles: { display_name: string } | null };
 type Icon = React.ComponentProps<typeof Ionicons>['name'];
@@ -54,7 +55,7 @@ export function SocialActions({ video, session, demo, onShare }: { video: Video;
       if (error) throw error;
       if (requestGeneration !== generation.current) return;
       if (kind === 'likes') setLiked(!current); else if (kind === 'bookmarks') setSaved(!current); else setFollowing(!current);
-    } catch { if (requestGeneration === generation.current) { setInteractionState('error'); Alert.alert('Could not update', 'The result may be uncertain. Tap the action to reload its current state.'); } } finally { if (requestGeneration === generation.current) setBusy(false); }
+    } catch (error) { if (requestGeneration === generation.current) { if (isWriteLimitError(error)) Alert.alert('Please slow down', 'You have reached the action limit. Try again later.'); else { setInteractionState('error'); Alert.alert('Could not update', 'The result may be uncertain. Tap the action to reload its current state.'); } } } finally { if (requestGeneration === generation.current) setBusy(false); }
   }
   async function fetchComments() {
     if (!supabase || demo) return;
@@ -76,7 +77,7 @@ export function SocialActions({ video, session, demo, onShare }: { video: Video;
       if (result.error) throw result.error;
       setText('');
       if (modal === 'comments') await fetchComments(); else { setModal(null); Alert.alert('Report submitted', 'Thank you. An administrator can review it.'); }
-    } catch { setMessage('Could not submit. Please try again.'); } finally { setBusy(false); }
+    } catch (error) { setMessage(isWriteLimitError(error) ? 'You have reached the action limit. Try again later.' : 'Could not submit. Please try again.'); } finally { setBusy(false); }
   }
   async function deleteComment(id: string) {
     if (!supabase || !userId || busy) return;

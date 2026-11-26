@@ -1,5 +1,5 @@
 import 'react-native-url-polyfill/auto';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { sessionStorage } from './storage';
 import { createClient } from '@supabase/supabase-js';
 
 // EXPO_PUBLIC values are included in the app bundle. These must be public keys only.
@@ -12,7 +12,7 @@ function makeClient() {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:' || !parsed.hostname) return null;
     return createClient(url, key, {
-      auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+      auth: { storage: sessionStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
     });
   } catch {
     return null;
