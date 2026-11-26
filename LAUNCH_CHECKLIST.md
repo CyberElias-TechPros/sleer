@@ -1,0 +1,42 @@
+# Sleer setup, testing and launch checklist
+
+Keep this checklist until you are ready. No account, migration, cloud build, or phone test has been performed by the coding agent. This prototype is **not ready for public launch** until the security, moderation and device checks below pass.
+
+## 1. Run the app on your Android phone
+
+- Install Node.js LTS and Expo Go on your phone. In the project directory run `npm install`, then `npx expo start`. Scan the QR code in Expo Go. Try the same Wi-Fi network; see Expo's tunnel instructions if needed.
+- Without Supabase, the feed uses two copies of the same licensed demo clip. The sample host must be reachable from the phone. Likes and saves are temporary in this mode.
+- Check swiping, only one video playing, background pause, mute, loading and errors, different Android screen sizes, app navigation and slow connections. Video autoplay and performance have not been verified on a device.
+
+## 2. Create and connect Supabase
+
+- Create a new project. Run all SQL files in `supabase/migrations/` **in filename order**, once, on a fresh project, using the SQL Editor or the Supabase CLI migration workflow. The first migration only creates profiles for users created after the trigger exists; do not apply it to a populated project without planning a backfill. The second creates content/social tables and a private `creator-videos` bucket, and configures a 15 MiB MP4 limit. The third restricts client-supplied interaction columns. Review the SQL before applying it.
+- Copy `.env.example` to `.env`. Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` to your project's HTTPS URL and **publishable or legacy anon key**. Restart with `npx expo start --clear`. Never put a service-role/secret key in an Expo public variable or share it with the app. These public values are embedded in builds.
+- Enable email/password authentication. If email confirmation is enabled, configure the Supabase Site URL to a valid page; users confirm through the email link, return to Sleer and sign in. App deep links, password reset and email delivery setup are not implemented. Check the provider's current email limits.
+- Run the pgTAP tests in `supabase/tests/` against a disposable local Supabase instance: install Docker and the Supabase CLI, run `npx supabase init` if no CLI config exists, then `npx supabase start`, `npx supabase db reset`, and `npx supabase test db`. **Reset deletes local data.** The migrations and policy tests have not been run here. Also test access using two real test accounts: users must not approve their own videos, access another user's pending upload, change another user's data, or see private reports.
+- Profile names, bios, IDs and creation dates are public. Session tokens currently use unencrypted AsyncStorage; review secure storage, privacy and account recovery before production. See AUDIT_REPORT.md for additional open release blockers.
+
+## 3. Add and moderate video content
+
+- Only stream content you own or have permission to distribute. Direct HTTPS video URLs go in `public.videos` with `source_type = 'external_direct'` and `status = 'approved'` via a trusted administrator. Fill `caption`, `creator_name`, `category` and `attribution`; optionally associate an existing `creator_id`. The app cannot play ordinary YouTube, Instagram or TikTok page URLs. Provider-specific embeds are not implemented and must meet each provider's terms.
+- Example for the Supabase SQL Editor, **replace the URL and attribution with content you have rights to**:
+
+```sql
+insert into public.videos (creator_name, caption, category, attribution, source_type, playback_url, status)
+values ('Creator name', 'My first video', 'General', 'Rights and credit information', 'external_direct', 'https://your-authorized-host.example/video.mp4', 'approved');
+```
+
+- Signed-in creators can submit an MP4 up to 15 MiB from Create and affirm they have rights (the assertion is recorded but is not proof). Files go to a private bucket; records start pending. In the trusted SQL Editor, inspect pending records: `select id, creator_id, storage_path, caption, category, creator_asserted_rights from public.videos where status = 'pending' order by created_at;`. Review the actual file in the private Storage dashboard and verify rights/safety, then approve **only that ID** with `update public.videos set status = 'approved' where id = '<reviewed-video-uuid>' and status = 'pending';`. To reject, use `status = 'rejected'`. Review reports in the trusted dashboard/SQL Editor. Never expose admin or service-role credentials in the app.
+- There is no admin dashboard, upload progress bar, transcoding, automatic content scanning, abuse rate limiting, takedown workflow, storage cleanup job or dedicated video streaming service. Build and verify these operational safeguards before public launch. Metadata checks alone do not prove a file is safe or correctly encoded. Signed URLs for approved uploads last one hour and may remain usable until expiry after rejection. Upload retries can leave orphan files or duplicate submissions. If the app reports an unknown submission result, check for the existing pending record before retrying; monitor and clean orphan files manually only after checking references. Plan for limited storage/bandwidth and possible charges.
+
+## 4. Verify app flows
+
+- Use two test accounts to check sign-up, confirmation, sign-in, session restoration, profile edits, sign-out, approved feed, search/category filters, following, likes, comments, deleting your own comments, saved videos, reporting and upload/review. Feed is chronological, not personalized. Loading uses offset pagination; changes to content while paging can shift results. Search matches captions and categories are exact strings. Check what happens offline and after sign-out.
+- Uploaded videos cannot yet be shared through app deep links; sharing direct videos shares their source URL. Platform embeds, notifications, user profile browsing, account deletion, password reset and production moderation tools are not implemented. Report and interaction writes need real-device and backend tests.
+- Run `npm run typecheck`, `npm test` (Node 22.18+), and `npx expo export --platform android`. Unit tests are limited and do not replace integration tests. The dependency audit has reported moderate vulnerabilities in Expo's dependency chain; review `npm audit` and compatible updates before release.
+
+## 5. Build an APK when ready
+
+- `app.json` currently uses **provisional** Android package `com.cyberelias.sleer`. Replace it with a unique application ID you control before the first release; changing it after release creates a different app. Configure your own name, icon, splash screen and privacy disclosures.
+- Create an Expo account and install/sign in to EAS CLI (`npm install --global eas-cli`, `eas login`). Run `eas build:configure` and follow the prompts to link your own Expo project. `eas.json` includes an internal APK preview and a production AAB profile. Set the two **public** Supabase variables in the appropriate EAS environment; never upload service-role secrets to the app.
+- Run `eas build --platform android --profile preview`. Download the resulting APK from EAS, install it on a compatible Android phone, and repeat the device tests. A build has not been run here. Publishing to Google Play requires a separate developer account, verification/testing and fees; check current requirements. Free tier limits and build quotas can change.
