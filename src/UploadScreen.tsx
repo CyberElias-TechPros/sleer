@@ -7,6 +7,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './auth/client';
 import { categories } from './categories';
 import { shouldRemoveFailedUpload } from './uploadSafety';
+import { isWriteLimitError } from './errors';
 
 const MAX_BYTES = 15 * 1024 * 1024;
 export function UploadScreen({ session }: { session: Session | null }) {
@@ -44,11 +45,11 @@ export function UploadScreen({ session }: { session: Session | null }) {
       const { error } = await supabase.from('videos').insert({ creator_id: session.user.id, creator_name: profile.display_name, caption: caption.trim(), category: category.trim(), attribution: '', creator_asserted_rights: true, source_type: 'uploaded', storage_path: path });
       if (error) throw error;
       setAsset(null); setCaption(''); setRights(false); setMessage('Submitted for review. It will appear in the feed only after approval.');
-    } catch {
+    } catch (error) {
       // A timed-out insert may have committed. Never delete a file that could now
       // be referenced by a submission; leave ambiguous cases for reconciliation.
       if (shouldRemoveFailedUpload(uploaded, metadataAttempted)) await supabase.storage.from('creator-videos').remove([path]).catch(() => {});
-      setMessage(metadataAttempted ? 'Submission status is unknown. Ask an administrator to check before retrying; your upload may have been received.' : 'Upload failed. Check your connection and try again. An administrator may need to clean up an incomplete upload.');
+      setMessage(isWriteLimitError(error) ? 'You have reached the upload limit. Please try again later.' : metadataAttempted ? 'Submission status is unknown. Ask an administrator to check before retrying; your upload may have been received.' : 'Upload failed. Check your connection and try again. An administrator may need to clean up an incomplete upload.');
     } finally { setBusy(false); }
   }
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

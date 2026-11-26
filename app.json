@@ -30,7 +30,8 @@
           "photosPermission": "Allow Sleer to select a video you have permission to share.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

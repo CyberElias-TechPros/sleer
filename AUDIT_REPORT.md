@@ -6,11 +6,11 @@ Review of the checkout and working-tree changes on 2026-11-25, using the checkli
 
 ### 1. Release blocker: authorization and complete flows are unverified
 **Paths:** `supabase/migrations/*.sql`, `supabase/tests/*.sql`, `src/auth/`, `src/SocialActions.tsx`, `src/UploadScreen.tsx`.
-The migration and pgTAP files have not run against Supabase, and real storage, authentication and mobile behavior have not been exercised. Unit tests only exercise small pure functions. Policy regressions could expose pending uploads or permit unauthorized writes. **Next:** run local Supabase migrations and pgTAP in CI, then test with two accounts and anonymous users; test on real Android devices and build an APK. No Docker, local PostgreSQL/Supabase, credentials or Android device was available in this environment.
+The migration and pgTAP files have not run against Supabase, and real storage, authentication and mobile behavior have not been exercised. PGlite smoke tests use simplified authentication and storage stubs, not the real APIs. Policy regressions could expose pending uploads or permit unauthorized writes. **Next:** run local Supabase migrations and pgTAP in CI, then test with two accounts and anonymous users; test on real Android devices and build an APK. No Docker, local PostgreSQL/Supabase, credentials or Android device was available in this environment.
 
 ### 2. Release blocker: unbounded uploads, reports and interactions
 **Paths:** `supabase/migrations/20261125010000_content_and_social.sql`, `src/UploadScreen.tsx`, `src/SocialActions.tsx`.
-Authenticated users can make unlimited storage requests, upload multiple files and create reports/comments. The 15 MiB per-file bucket limit and UI busy states do not prevent automated abuse, storage exhaustion or charges. **Next:** add server-side per-user/account/IP rate limits, quotas and alerts; investigate concurrent requests, deletion/re-upload abuse and billing limits. Do not rely on the client or publish before these controls are validated.
+**Mitigated in a later update:** `supabase/migrations/20261125030000_write_limits.sql` adds rolling per-account successful-write limits, including deleted/re-uploaded objects. PGlite tests exercise basic allowance and expiry, not concurrent transactions or the real Supabase Storage API. Limits do not prevent failed-request floods, account farming, storage transfer charges or IP-based abuse. **Next:** add gateway/IP rate limits, storage quotas and billing alerts; validate concurrency and error propagation in real Supabase. Do not rely on the client or publish before these controls are validated.
 
 ### 3. Release blocker: moderation and rights enforcement are operational, not automated
 **Paths:** `supabase/migrations/20261125010000_content_and_social.sql`, `LAUNCH_CHECKLIST.md`.
@@ -18,7 +18,7 @@ An uploader can assert rights without proof, choose metadata, submit paths that 
 
 ### 4. High: credentials persist in unencrypted local storage
 **Path:** `src/auth/client.ts`.
-AsyncStorage persists the Supabase session without encryption. A compromised or backed-up device may expose tokens. **Next:** design and device-test a secure keystore-backed session storage solution, including long token handling, recovery and migration. Never place service-role credentials in an Expo public variable.
+**Mitigated in a later update:** `src/auth/storage.ts` and `src/auth/secureStorageCore.ts` use Expo SecureStore on native platforms and migrate legacy sessions; web remains on AsyncStorage and is not a supported production target. Pure adapter tests cover chunking and failure paths, but no actual device/keystore test has run. **Next:** test storage, migration, backup and sign-out on Android; review privacy and account recovery. Never place service-role credentials in an Expo public variable.
 
 ### 5. High: ambiguous upload failure could delete a referenced file
 **Paths:** `src/UploadScreen.tsx`, `src/uploadSafety.ts`, `tests/upload-safety.test.ts`.
@@ -53,19 +53,19 @@ Password reset, account deletion, provider-specific embeds, creator profile brow
 | Flow | Implemented paths / important scenarios | Verification status |
 |---|---|---|
 | Demo and feed | Initial load, empty/error, scroll activation, background pause, mute, retry, filtered feed | Pure active/playback helpers tested; no Android playback, offline or orientation test |
-| Auth and profile | Sign-up, email confirmation outside app, sign-in/out, session refresh, edit/save/error | Validation helpers tested; no actual provider or device test; reset/deletion/deep links absent |
+| Auth and profile | Sign-up, email confirmation outside app, sign-in/out, session refresh, edit/save/error | Validation and secure storage adapter helpers tested; no actual provider or device test; reset/deletion/deep links absent |
 | Discover | Category and caption search, empty result | Search normalization unit-tested; no real query, pagination or accessibility test |
 | Likes, follows, bookmarks | Sign-in guard, load/toggle, saved/following feeds, errors | Static review only; no component or backend integration test |
 | Comments and reports | Load, post, delete own, report | Static review only; moderation/report response and pagination incomplete |
 | Creator submission | Picker, size/type, consent, upload, pending metadata, ambiguous failure | Cleanup decision unit-tested; no real picker/storage/moderation tests; limits are not abuse prevention |
 | Administrator | SQL approval/rejection and manual review | Documented only; no admin UI or end-to-end tests |
-| Access control | Own profile, approved content, own social writes, private bucket | pgTAP cases written but not executed; storage HTTP signed URL access and concurrency untested |
+| Access control | Own profile, approved content, own social writes, private bucket | PostgreSQL/PGlite smoke tests passed with stubs; pgTAP and real Supabase storage HTTP, signed URL and concurrency tests unexecuted |
 | Build/release | JS export, EAS preview profile | Android JS export passed locally; no APK, signing or store release was tested |
 
 ## Checks run in this environment
 
 - `npm run typecheck`: passed.
-- `npm test`: seven unit tests passed. These do not exercise React Native, Supabase or the network.
+- `npm test`: 12 tests passed, including a PostgreSQL/PGlite migration and policy smoke test with auth/storage stubs. They do not exercise React Native, real Supabase APIs, network or database concurrency.
 - `EXPO_OFFLINE=1 npx expo export --platform android`: passed (JavaScript bundle only).
 - `npm audit`: three moderate findings in the Expo/fingerprint/minimatch dependency chain; no forced breaking downgrade was applied.
 - Supabase migrations/pgTAP, device E2E and GitHub Actions: **not run**. See [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md) for setup and test instructions.
